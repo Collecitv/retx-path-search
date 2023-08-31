@@ -10,6 +10,10 @@ serde = {version = "1.0.166", features = ["derive"]}
 serde_json = "1.0.100"
 reqwest = "0.11"
 tokio = { version = "1", features = ["full"] }
-regex = "1.9.1"
-regex-syntax = "0.7.3"
 anyhow = "1.0.71"
+compact_str = "0.7.1"
+smallvec = { version = "1.11.0", features = ["serde"]}
+futures = "0.3"
+regex = "1.9.1"
+regex-syntax = "0.6.29"
+lazy-regex = "3.0.0"

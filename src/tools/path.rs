@@ -1,8 +1,15 @@
+use compact_str::CompactString;
+use futures::future;
+
 use reqwest::{Client, Error};
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 
 use serde_json;
-use std::collections::HashSet;
+
+use crate::build_fuzzy_regex_filter::build_fuzzy_regex_filter;
+use crate::case_permutations::case_permutations;
+use crate::trigrams::trigrams;
 
 #[derive(Debug, Serialize, Deserialize)]
 struct BodyRes {
@@ -48,6 +55,8 @@ pub async fn path_search(
 ) -> Result<String, Error> {
     let response_array = search_api(index_name, search_field, search_query).await?;
 
+    let d = fuzzy_path_match(search_query, 50).await;
+
     let paths: Vec<_> = response_array
         .into_iter()
         .map(|c| c.relative_path)
@@ -80,6 +89,8 @@ async fn search_api(
 ) -> Result<Vec<ResponseObject>, Error> {
     let client = Client::new();
     let base_url = "http://13.234.204.108:7280";
+
+    println!("search_query {}", search_query);
 
     let query = if !search_field.is_empty() {
         format!("{}:{}", search_field, search_query)
@@ -119,7 +130,7 @@ async fn search_api(
                         repo_name: result_item.repo_name,
                         lang: result_item.lang,
                         repo_ref: result_item.repo_ref,
-                    })
+                    });
                 }
             }
             Err(err) => {
@@ -130,10 +141,38 @@ async fn search_api(
         println!("Request was not successful: {}", response.status());
     }
 
-    println!(
-        "Contents of response_array length: {:?}",
-        response_array.len()
-    );
-
     Ok(response_array)
 }
+
+async fn fuzzy_path_match(query_str: &str, limit: usize) {
+    let hits = future::try_join_all(
+        trigrams(query_str)
+            .flat_map(|s| case_permutations(s.as_str()))
+            .map(|token| search_with_async(token.clone())),
+    )
+    .await; // Pass token as a reference
+
+    let regex_filter = build_fuzzy_regex_filter(query_str);
+
+    println!("{:?}", hits);
+    println!("regex_filter {:?}", regex_filter);
+
+    // if the regex filter fails to build for some reason, the filter defaults to returning
+    // false and zero results are produced
+    // hits.into_iter()
+    //     .map(|(doc, _)| doc)
+    //     .filter(move |doc| {
+    //         regex_filter
+    //             .as_ref()
+    //             .map(|f| f.is_match(&doc.relative_path))
+    //             .unwrap_or_default()
+    //     })
+    //     .filter(|doc| !doc.relative_path.ends_with('/')) // omit directories
+    //     .take(limit);
+}
+
+async fn search_with_async(token: CompactString) -> Result<Vec<ResponseObject>, Error> {
+    search_api("bloop", "relative_path", token.as_str()).await
+}
+
+// declare a variable

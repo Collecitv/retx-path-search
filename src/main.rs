@@ -1,5 +1,9 @@
+mod helpers;
 mod tools;
 
+use helpers::build_fuzzy_regex_filter;
+use helpers::case_permutations;
+use helpers::trigrams;
 use tools::path;
 
 use anyhow::Result;
@@ -8,8 +12,7 @@ use anyhow::Result;
 async fn main() -> Result<()> {
     println!("Hello, world!");
 
-
-    let result = path::path_search("bloop", "", "path").await;
+    let result = path::path_search("bloop", "relative_path", "path.rs").await;
     println!("{:?}", result);
 
     Ok(())
