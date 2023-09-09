@@ -12,7 +12,7 @@ use anyhow::Result;
 async fn main() -> Result<()> {
     println!("Hello, world!");
 
-    let result = path::path_search("bloop", "relative_path", "path.rs").await;
+    let result = path::path_search("bloop", "relative_path", "file.rs").await;
     println!("{:?}", result);
 
     Ok(())

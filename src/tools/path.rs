@@ -1,9 +1,10 @@
 use compact_str::CompactString;
 use futures::future;
+use std::collections::{HashMap, HashSet};
+use std::hash::{Hash, Hasher};
 
 use reqwest::{Client, Error};
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
 
 use serde_json;
 
@@ -15,6 +16,11 @@ use crate::trigrams::trigrams;
 struct BodyRes {
     query: String,
     max_hits: i32,
+}
+
+struct FileResDoc {
+    res_obj: ResponseObject,
+    val: usize,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -40,7 +46,7 @@ struct ResultItem {
     unique_hash: String,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Eq, PartialEq, Hash, Serialize, Deserialize, Clone)]
 struct ResponseObject {
     relative_path: String,
     repo_name: String,
@@ -145,30 +151,48 @@ async fn search_api(
 }
 
 async fn fuzzy_path_match(query_str: &str, limit: usize) {
-    let hits = future::try_join_all(
-        trigrams(query_str)
-            .flat_map(|s| case_permutations(s.as_str()))
-            .map(|token| search_with_async(token.clone())),
-    )
-    .await; // Pass token as a reference
+    let mut counts: HashMap<ResponseObject, usize> = HashMap::new();
+
+    let hits = trigrams(query_str).flat_map(|s| case_permutations(s.as_str())); // Pass token as a reference
+
+    // Iterate over counts and populate file_documents
+    for hit in hits {
+        let result = search_with_async(hit.clone().into()).await;
+        for res in result.unwrap() {
+            // Check if the key exists in the HashMap
+            if let Some(entry) = counts.get_mut(&res.clone()) {
+                // The key exists, increment its value
+                *entry += 1;
+            } else {
+                // The key doesn't exist, insert it with an initial value of 0
+                counts.insert(res.clone(), 0);
+                println!("res: {:?}\n", res)
+            }
+        }
+    }
+
+    // Iterate over the elements and print them individually
+    // for item in hits {
+    //     println!("hits item: {:?}", item);
+    // }
 
     let regex_filter = build_fuzzy_regex_filter(query_str);
 
-    println!("{:?}", hits);
-    println!("regex_filter {:?}", regex_filter);
-
     // if the regex filter fails to build for some reason, the filter defaults to returning
     // false and zero results are produced
-    // hits.into_iter()
-    //     .map(|(doc, _)| doc)
-    //     .filter(move |doc| {
-    //         regex_filter
-    //             .as_ref()
-    //             .map(|f| f.is_match(&doc.relative_path))
-    //             .unwrap_or_default()
-    //     })
-    //     .filter(|doc| !doc.relative_path.ends_with('/')) // omit directories
-    //     .take(limit);
+    let result = counts
+        .into_iter()
+        .map(|(doc, _)| doc)
+        .filter(move |doc| {
+            regex_filter
+                .as_ref()
+                .map(|f| f.is_match(&doc.relative_path))
+                .unwrap_or_default()
+        })
+        .filter(|doc| !doc.relative_path.ends_with('/')) // omit directories
+        .take(limit);
+
+    println!("result: {:?}", result);
 }
 
 async fn search_with_async(token: CompactString) -> Result<Vec<ResponseObject>, Error> {
