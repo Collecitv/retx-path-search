@@ -96,7 +96,15 @@ async fn search_api(
     let client = Client::new();
     let base_url = "http://13.234.204.108:7280";
 
-    println!("search_query {}", search_query);
+    println!("search_query_ls {}", search_query);
+
+    // Trim leading and trailing whitespace from search_query
+    let search_query = search_query.trim();
+
+    // Perform a case-insensitive comparison
+    if search_query.trim() == ".rs" {
+        return Ok(Vec::new());
+    }
 
     let query = if !search_field.is_empty() {
         format!("{}:{}", search_field, search_query)
@@ -106,7 +114,7 @@ async fn search_api(
 
     let json_data = BodyRes {
         query,
-        max_hits: 10,
+        max_hits: 100,
     };
 
     let json_string = serde_json::to_string(&json_data).expect("Failed to serialize object");
@@ -153,11 +161,15 @@ async fn search_api(
 async fn fuzzy_path_match(query_str: &str, limit: usize) {
     let mut counts: HashMap<ResponseObject, usize> = HashMap::new();
 
-    let hits = trigrams(query_str).flat_map(|s| case_permutations(s.as_str())); // Pass token as a reference
+    let hits = trigrams(query_str)
+        .flat_map(|s| case_permutations(s.as_str()))
+        .chain(std::iter::once(query_str.to_owned().into())); // Pass token as a reference
 
     // Iterate over counts and populate file_documents
     for hit in hits {
+        println!("hit: {:?}\n", hit.clone());
         let result = search_with_async(hit.clone().into()).await;
+        println!("res: {:?}\n", result);
         for res in result.unwrap() {
             // Check if the key exists in the HashMap
             if let Some(entry) = counts.get_mut(&res.clone()) {
@@ -166,21 +178,28 @@ async fn fuzzy_path_match(query_str: &str, limit: usize) {
             } else {
                 // The key doesn't exist, insert it with an initial value of 0
                 counts.insert(res.clone(), 0);
-                println!("res: {:?}\n", res)
             }
         }
     }
 
-    // Iterate over the elements and print them individually
-    // for item in hits {
-    //     println!("hits item: {:?}", item);
-    // }
+    // Convert the HashMap into a Vec<(ResponseObject, usize)>
+    let mut new_hit: Vec<(ResponseObject, usize)> = counts.into_iter().collect();
+
+    new_hit.sort_by(|(this_doc, this_count), (other_doc, other_count)| {
+        let order_count_desc = other_count.cmp(this_count);
+        let order_path_asc = this_doc
+            .relative_path
+            .as_str()
+            .cmp(other_doc.relative_path.as_str());
+
+        order_count_desc.then(order_path_asc)
+    });
 
     let regex_filter = build_fuzzy_regex_filter(query_str);
 
     // if the regex filter fails to build for some reason, the filter defaults to returning
     // false and zero results are produced
-    let result = counts
+    let result = new_hit
         .into_iter()
         .map(|(doc, _)| doc)
         .filter(move |doc| {
