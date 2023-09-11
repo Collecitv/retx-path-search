@@ -102,9 +102,9 @@ async fn search_api(
     let search_query = search_query.trim();
 
     // Perform a case-insensitive comparison
-    if search_query.trim() == ".rs" {
-        return Ok(Vec::new());
-    }
+    // if search_query.trim() == ".rs" {
+    //     return Ok(Vec::new());
+    // }
 
     let query = if !search_field.is_empty() {
         format!("{}:{}", search_field, search_query)
@@ -199,17 +199,37 @@ async fn fuzzy_path_match(query_str: &str, limit: usize) {
 
     // if the regex filter fails to build for some reason, the filter defaults to returning
     // false and zero results are produced
-    let result = new_hit
-        .into_iter()
-        .map(|(doc, _)| doc)
-        .filter(move |doc| {
-            regex_filter
-                .as_ref()
-                .map(|f| f.is_match(&doc.relative_path))
-                .unwrap_or_default()
-        })
-        .filter(|doc| !doc.relative_path.ends_with('/')) // omit directories
-        .take(limit);
+    // let result = new_hit
+    //     .into_iter()
+    //     .map(|(doc, _)| doc)
+    //     .filter(move |doc| {
+    //         regex_filter
+    //             .as_ref()
+    //             .map(|f| f.is_match(&doc.relative_path))
+    //             .unwrap_or_default()
+    //     })
+    //     .filter(|doc| !doc.relative_path.ends_with('/')) // omit directories
+    //     .take(limit);
+
+    let mut filterd_hits = Vec::new();
+
+    match regex_filter {
+        Some(f) => {
+            for res in new_hit {
+                if f.is_match(&res.0.relative_path) {
+                    filterd_hits.push(res.0.relative_path);
+                }
+            }
+        }
+        None => {}
+    }
+
+    let result = filterd_hits;
+
+    // let filterd_hits_by_slash = filterd_hits
+    //     .into_iter()
+    //     .filter(|doc| !doc.ends_with('/'))
+    //     .take(limit);
 
     println!("result: {:?}", result);
 }
